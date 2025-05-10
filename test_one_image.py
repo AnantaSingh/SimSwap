@@ -1,4 +1,3 @@
-
 import cv2
 import torch
 import fractions
@@ -49,15 +48,15 @@ if __name__ == '__main__':
         img_att = img_b.view(-1, img_b.shape[0], img_b.shape[1], img_b.shape[2])
 
         # convert numpy to tensor
-        img_id = img_id.cuda()
-        img_att = img_att.cuda()
+        img_id = img_id.to(torch.device('cuda:0' if torch.cuda.is_available() else 'cpu'))
+        img_att = img_att.to(torch.device('cuda:0' if torch.cuda.is_available() else 'cpu'))
 
         #create latent id
         img_id_downsample = F.interpolate(img_id, size=(112,112))
         latend_id = model.netArc(img_id_downsample)
         latend_id = latend_id.detach().to('cpu')
         latend_id = latend_id/np.linalg.norm(latend_id,axis=1,keepdims=True)
-        latend_id = latend_id.to('cuda')
+        latend_id = latend_id.to(torch.device('cuda:0' if torch.cuda.is_available() else 'cpu'))
 
 
         ############## Forward Pass ######################
@@ -78,9 +77,11 @@ if __name__ == '__main__':
         full = row3.detach()
         full = full.permute(1, 2, 0)
         output = full.to('cpu')
-        output = np.array(output)
-        output = output[..., ::-1]
 
-        output = output*255
+        # Convert tensor to numpy array and ensure proper type conversion
+        output = output.numpy()
+        new_output = output.copy()
+        new_output = new_output[..., ::-1]  # BGR to RGB
+        new_output = (new_output * 255).clip(0, 255).astype(np.uint8)  # Convert to uint8
 
-        cv2.imwrite(opt.output_path + 'result.jpg', output)
+        cv2.imwrite(opt.output_path + 'result.jpg', new_output)

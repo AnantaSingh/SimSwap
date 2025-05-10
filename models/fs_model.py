@@ -6,6 +6,7 @@ import os
 from torch.autograd import Variable
 from .base_model import BaseModel
 from . import networks
+from .arcface_models import ResNet
 
 class SpecificNorm(nn.Module):
     def __init__(self, epsilon=1e-8):
@@ -15,11 +16,11 @@ class SpecificNorm(nn.Module):
         """
         super(SpecificNorm, self).__init__()
         self.mean = np.array([0.485, 0.456, 0.406])
-        self.mean = torch.from_numpy(self.mean).float().cuda()
+        self.mean = torch.from_numpy(self.mean).float()
         self.mean = self.mean.view([1, 3, 1, 1])
 
         self.std = np.array([0.229, 0.224, 0.225])
-        self.std = torch.from_numpy(self.std).float().cuda()
+        self.std = torch.from_numpy(self.std).float()
         self.std = self.std.view([1, 3, 1, 1])
 
     def forward(self, x):
@@ -48,7 +49,11 @@ class fsModel(BaseModel):
             torch.backends.cudnn.benchmark = True
         self.isTrain = opt.isTrain
 
-        device = torch.device("cuda:0")
+        # Set device based on gpu_ids
+        if len(opt.gpu_ids) > 0 and torch.cuda.is_available():
+            device = torch.device("cuda:0")
+        else:
+            device = torch.device("cpu")
 
         if opt.crop_size == 224:
             from .fs_networks import Generator_Adain_Upsample, Discriminator
@@ -61,7 +66,9 @@ class fsModel(BaseModel):
 
         # Id network
         netArc_checkpoint = opt.Arc_path
-        netArc_checkpoint = torch.load(netArc_checkpoint, map_location=torch.device("cpu"))
+        # Add ResNet to safe globals for PyTorch 2.6+
+        torch.serialization.add_safe_globals([ResNet])
+        netArc_checkpoint = torch.load(netArc_checkpoint, map_location=device, weights_only=False)
         self.netArc = netArc_checkpoint
         self.netArc = self.netArc.to(device)
         self.netArc.eval()
@@ -82,18 +89,15 @@ class fsModel(BaseModel):
         self.netD2.to(device)
 
         #
-        self.spNorm =SpecificNorm()
+        self.spNorm = SpecificNorm()
         self.downsample = nn.AvgPool2d(3, stride=2, padding=[1, 1], count_include_pad=False)
 
         # load networks
         if opt.continue_train or opt.load_pretrain:
             pretrained_path = '' if not self.isTrain else opt.load_pretrain
-            # print (pretrained_path)
             self.load_network(self.netG, 'G', opt.which_epoch, pretrained_path)
             self.load_network(self.netD1, 'D1', opt.which_epoch, pretrained_path)
             self.load_network(self.netD2, 'D2', opt.which_epoch, pretrained_path)
-
-
 
         if self.isTrain:
             # define loss functions
@@ -107,8 +111,7 @@ class fsModel(BaseModel):
             self.loss_names = self.loss_filter('G_GAN', 'G_GAN_Feat', 'G_VGG', 'G_ID', 'G_Rec', 'D_GP',
                                                'D_real', 'D_fake')
 
-           # initialize optimizers
-
+            # initialize optimizers
             # optimizer G
             params = list(self.netG.parameters())
             self.optimizer_G = torch.optim.Adam(params, lr=opt.lr, betas=(opt.beta1, 0.999))
@@ -120,7 +123,7 @@ class fsModel(BaseModel):
     def _gradinet_penalty_D(self, netD, img_att, img_fake):
         # interpolate sample
         bs = img_fake.shape[0]
-        alpha = torch.rand(bs, 1, 1, 1).expand_as(img_fake).cuda()
+        alpha = torch.rand(bs, 1, 1, 1).expand_as(img_fake)
         interpolated = Variable(alpha * img_att + (1 - alpha) * img_fake, requires_grad=True)
         pred_interpolated = netD.forward(interpolated)
         pred_interpolated = pred_interpolated[-1]
@@ -128,7 +131,7 @@ class fsModel(BaseModel):
         # compute gradients
         grad = torch.autograd.grad(outputs=pred_interpolated,
                                    inputs=interpolated,
-                                   grad_outputs=torch.ones(pred_interpolated.size()).cuda(),
+                                   grad_outputs=torch.ones(pred_interpolated.size()),
                                    retain_graph=True,
                                    create_graph=True,
                                    only_inputs=True)[0]
