@@ -3,7 +3,7 @@ wget -P ./arcface_model https://github.com/neuralchen/SimSwap/releases/download/
 wget https://github.com/neuralchen/SimSwap/releases/download/1.0/checkpoints.zip
 unzip ./checkpoints.zip  -d ./checkpoints
 rm checkpoints.zip
-wget https://github.com/deepinsight/insightface/releases/download/v0.2/antelope.zip
+wget https://github.com/deepinsight/insightface/releases/download/v0.2/antelopev2.zip
 mkdir -p insightface_func/models
-unzip ./antelope.zip -d ./insightface_func/models/
-rm antelope.zip
+unzip ./antelopev2.zip -d ./insightface_func/models/
+rm antelopev2.zip
